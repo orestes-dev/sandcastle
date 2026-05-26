@@ -698,6 +698,28 @@ describe("InitService scaffold", () => {
       const joined = lines.join("\n");
       expect(joined).not.toContain("CODING_STANDARDS.md");
     });
+
+    it("planner template includes a step to install a schema validator", () => {
+      const lines = getNextStepsLines("parallel-planner", "main.mts");
+      const joined = lines.join("\n");
+      expect(joined).toContain("npm install zod");
+      expect(joined).toContain("standardschema.dev");
+    });
+
+    it("parallel-planner-with-review template includes the schema validator step", () => {
+      const lines = getNextStepsLines(
+        "parallel-planner-with-review",
+        "main.mts",
+      );
+      const joined = lines.join("\n");
+      expect(joined).toContain("npm install zod");
+    });
+
+    it("non-planner template does not mention installing zod", () => {
+      const lines = getNextStepsLines("simple-loop", "main.mts");
+      const joined = lines.join("\n");
+      expect(joined).not.toContain("zod");
+    });
   });
 
   it("scaffolds pi agent with pi Dockerfile", async () => {
@@ -1519,7 +1541,7 @@ describe("InitService scaffold", () => {
         join(dir, ".sandcastle", "main.mts"),
         "utf-8",
       );
-      expect(main).toContain("id: string");
+      expect(main).toContain("id: z.string()");
       expect(main).toContain("TASK_ID: issue.id");
       expect(main).not.toContain("number: number");
       expect(main).not.toContain("ISSUE_NUMBER");
@@ -1539,6 +1561,8 @@ describe("InitService scaffold", () => {
       expect(main).toContain("Output.object");
       expect(main).toContain('tag: "plan"');
       expect(main).toContain("plan.output.issues");
+      expect(main).toContain('from "zod"');
+      expect(main).toContain("z.object");
       expect(main).not.toContain("extractPlanIssues");
     });
 
@@ -1688,7 +1712,7 @@ describe("InitService scaffold", () => {
         join(dir, ".sandcastle", "main.mts"),
         "utf-8",
       );
-      expect(main).toContain("id: string");
+      expect(main).toContain("id: z.string()");
       expect(main).toContain("TASK_ID: issue.id");
       expect(main).not.toContain("number: number");
       expect(main).not.toContain("ISSUE_NUMBER");
@@ -1708,6 +1732,8 @@ describe("InitService scaffold", () => {
       expect(main).toContain("Output.object");
       expect(main).toContain('tag: "plan"');
       expect(main).toContain("plan.output.issues");
+      expect(main).toContain('from "zod"');
+      expect(main).toContain("z.object");
       expect(main).not.toContain("extractPlanIssues");
     });
 
