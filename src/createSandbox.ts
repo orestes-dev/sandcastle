@@ -703,30 +703,10 @@ export const createSandbox = async (
 
   const worktreePath = worktreeInfo.path;
 
-  // 2. Copy files if requested (bind-mount only; isolated providers handle this in startSandbox)
-  if (
-    options.copyToWorktree &&
-    options.copyToWorktree.length > 0 &&
-    options.sandbox.tag !== "isolated"
-  ) {
-    await Effect.runPromise(
-      copyToWorktree(
-        options.copyToWorktree,
-        hostRepoDir,
-        worktreePath,
-        options.timeouts?.copyToWorktreeMs,
-      ),
-    );
-  }
-
-  // 2b. Run host.onWorktreeReady hooks (after copyToWorktree, before sandbox creation)
-  if (options.hooks?.host?.onWorktreeReady?.length) {
-    await Effect.runPromise(
-      runHostHooks(options.hooks.host.onWorktreeReady, worktreePath),
-    );
-  }
-
-  // 3. Start sandbox via provider or local sandbox layer (test mode)
+  // Sandbox setup runs after the worktree exists. If any step below fails (e.g.
+  // a missing image surfacing when the provider creates the sandbox), tear down
+  // the container (if it started) and remove the freshly-created worktree so it
+  // is not orphaned on disk.
   let providerHandle:
     | BindMountSandboxHandle
     | IsolatedSandboxHandle
@@ -736,107 +716,143 @@ export const createSandbox = async (
   let sandboxRepoDir: string;
   const isIsolated = options.sandbox.tag === "isolated";
 
-  if (isTestMode) {
-    sandboxLayer = options._test!.buildSandboxLayer!(worktreePath);
-    sandboxRepoDir = worktreePath;
-  } else {
-    // Provider mode: delegate to the shared startSandbox helper
-    const resolvedEnv = await Effect.runPromise(
-      resolveEnv(hostRepoDir).pipe(Effect.provide(NodeContext.layer)),
-    );
-    const env = mergeProviderEnv({
-      resolvedEnv,
-      agentProviderEnv: {},
-      sandboxProviderEnv: options.sandbox.env,
-    });
-
-    const provider = options.sandbox;
-
-    let startEffect;
-    if (provider.tag === "isolated") {
-      startEffect = startSandbox({
-        provider,
-        hostRepoDir: worktreePath,
-        env,
-        copyPaths: options.copyToWorktree,
-      });
-    } else if (provider.tag === "none") {
-      startEffect = startSandbox({
-        provider,
-        hostRepoDir,
-        env,
-        worktreeOrRepoPath: worktreePath,
-      });
-    } else {
-      startEffect = resolveGitMounts(join(hostRepoDir, ".git")).pipe(
-        Effect.provide(NodeFileSystem.layer),
-        Effect.catchAll(() => Effect.succeed([])),
-        // Patch git mounts for Windows worktree compatibility (ADR-0006)
-        Effect.flatMap((gitMounts) =>
-          Effect.tryPromise({
-            try: () =>
-              patchGitMountsForWindows(
-                gitMounts,
-                worktreePath,
-                SANDBOX_REPO_DIR,
-              ),
-            catch: (e) =>
-              new Error(
-                `Failed to patch git mounts: ${e instanceof Error ? e.message : String(e)}`,
-              ),
-          }),
-        ),
-        Effect.flatMap((gitMounts) =>
-          startSandbox({
-            provider,
-            hostRepoDir,
-            env,
-            worktreeOrRepoPath: worktreePath,
-            gitMounts,
-            repoDir: SANDBOX_REPO_DIR,
-          }),
-        ),
-      );
-    }
-
-    const startResult = await Effect.runPromise(startEffect);
-
-    providerHandle = startResult.handle;
-    sandboxLayer = startResult.sandboxLayer;
-    sandboxRepoDir = startResult.worktreePath;
-  }
-
-  // 4. Run onSandboxReady hooks (sandbox-side and host-side in parallel)
-  {
-    const sandboxOnReady = options.hooks?.sandbox?.onSandboxReady;
-    const hostOnReady = options.hooks?.host?.onSandboxReady;
-
-    if (sandboxOnReady?.length || hostOnReady?.length) {
+  try {
+    // 2. Copy files if requested (bind-mount only; isolated providers handle this in startSandbox)
+    if (
+      options.copyToWorktree &&
+      options.copyToWorktree.length > 0 &&
+      options.sandbox.tag !== "isolated"
+    ) {
       await Effect.runPromise(
-        Effect.gen(function* () {
-          const sandbox = yield* SandboxTag;
-          yield* sandbox.exec(
-            `git config --global --add safe.directory "${sandboxRepoDir}"`,
-          );
-          const sandboxEffects = (sandboxOnReady ?? []).map((hook) =>
-            sandbox.exec(hook.command, {
-              cwd: sandboxRepoDir,
-              sudo: hook.sudo,
-            }),
-          );
-          const allEffects = [...sandboxEffects] as Effect.Effect<
-            unknown,
-            unknown
-          >[];
-          if (hostOnReady?.length) {
-            allEffects.push(runHostHooks(hostOnReady, worktreePath));
-          }
-          yield* Effect.all(allEffects, {
-            concurrency: "unbounded",
-          });
-        }).pipe(Effect.provide(sandboxLayer)),
+        copyToWorktree(
+          options.copyToWorktree,
+          hostRepoDir,
+          worktreePath,
+          options.timeouts?.copyToWorktreeMs,
+        ),
       );
     }
+
+    // 2b. Run host.onWorktreeReady hooks (after copyToWorktree, before sandbox creation)
+    if (options.hooks?.host?.onWorktreeReady?.length) {
+      await Effect.runPromise(
+        runHostHooks(options.hooks.host.onWorktreeReady, worktreePath),
+      );
+    }
+
+    // 3. Start sandbox via provider or local sandbox layer (test mode)
+    if (isTestMode) {
+      sandboxLayer = options._test!.buildSandboxLayer!(worktreePath);
+      sandboxRepoDir = worktreePath;
+    } else {
+      // Provider mode: delegate to the shared startSandbox helper
+      const resolvedEnv = await Effect.runPromise(
+        resolveEnv(hostRepoDir).pipe(Effect.provide(NodeContext.layer)),
+      );
+      const env = mergeProviderEnv({
+        resolvedEnv,
+        agentProviderEnv: {},
+        sandboxProviderEnv: options.sandbox.env,
+      });
+
+      const provider = options.sandbox;
+
+      let startEffect;
+      if (provider.tag === "isolated") {
+        startEffect = startSandbox({
+          provider,
+          hostRepoDir: worktreePath,
+          env,
+          copyPaths: options.copyToWorktree,
+        });
+      } else if (provider.tag === "none") {
+        startEffect = startSandbox({
+          provider,
+          hostRepoDir,
+          env,
+          worktreeOrRepoPath: worktreePath,
+        });
+      } else {
+        startEffect = resolveGitMounts(join(hostRepoDir, ".git")).pipe(
+          Effect.provide(NodeFileSystem.layer),
+          Effect.catchAll(() => Effect.succeed([])),
+          // Patch git mounts for Windows worktree compatibility (ADR-0006)
+          Effect.flatMap((gitMounts) =>
+            Effect.tryPromise({
+              try: () =>
+                patchGitMountsForWindows(
+                  gitMounts,
+                  worktreePath,
+                  SANDBOX_REPO_DIR,
+                ),
+              catch: (e) =>
+                new Error(
+                  `Failed to patch git mounts: ${e instanceof Error ? e.message : String(e)}`,
+                ),
+            }),
+          ),
+          Effect.flatMap((gitMounts) =>
+            startSandbox({
+              provider,
+              hostRepoDir,
+              env,
+              worktreeOrRepoPath: worktreePath,
+              gitMounts,
+              repoDir: SANDBOX_REPO_DIR,
+            }),
+          ),
+        );
+      }
+
+      const startResult = await Effect.runPromise(startEffect);
+
+      providerHandle = startResult.handle;
+      sandboxLayer = startResult.sandboxLayer;
+      sandboxRepoDir = startResult.worktreePath;
+    }
+
+    // 4. Run onSandboxReady hooks (sandbox-side and host-side in parallel)
+    {
+      const sandboxOnReady = options.hooks?.sandbox?.onSandboxReady;
+      const hostOnReady = options.hooks?.host?.onSandboxReady;
+
+      if (sandboxOnReady?.length || hostOnReady?.length) {
+        await Effect.runPromise(
+          Effect.gen(function* () {
+            const sandbox = yield* SandboxTag;
+            yield* sandbox.exec(
+              `git config --global --add safe.directory "${sandboxRepoDir}"`,
+            );
+            const sandboxEffects = (sandboxOnReady ?? []).map((hook) =>
+              sandbox.exec(hook.command, {
+                cwd: sandboxRepoDir,
+                sudo: hook.sudo,
+              }),
+            );
+            const allEffects = [...sandboxEffects] as Effect.Effect<
+              unknown,
+              unknown
+            >[];
+            if (hostOnReady?.length) {
+              allEffects.push(runHostHooks(hostOnReady, worktreePath));
+            }
+            yield* Effect.all(allEffects, {
+              concurrency: "unbounded",
+            });
+          }).pipe(Effect.provide(sandboxLayer)),
+        );
+      }
+    }
+  } catch (error) {
+    if (providerHandle) {
+      await providerHandle.close().catch(() => {});
+    }
+    await Effect.runPromise(
+      WorktreeManager.remove(worktreePath).pipe(
+        Effect.catchAll(() => Effect.void),
+      ),
+    );
+    throw error;
   }
 
   // 5. Build applyToHost callback (once, reused across runs)
