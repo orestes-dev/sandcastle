@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type DisplayEntry, SilentDisplay } from "./Display.js";
+import { Display, type DisplayEntry, SilentDisplay } from "./Display.js";
 import { preprocessPrompt } from "./PromptPreprocessor.js";
 import { substitutePromptArgs } from "./PromptArgumentSubstitution.js";
 import type { SandboxService } from "./SandboxFactory.js";
@@ -24,13 +24,11 @@ describe("PromptPreprocessor", () => {
   const run = async (
     prompt: string,
     sandbox: SandboxService,
-    displayLayer: Layer.Layer<import("./Display.js").Display, never, never>,
+    displayLayer: Layer.Layer<Display>,
     cwd: string,
   ) => {
     const marked = await Effect.runPromise(
-      substitutePromptArgs(prompt, {}).pipe(
-        Effect.provide(displayLayer),
-      ) as Effect.Effect<string, unknown, never>,
+      substitutePromptArgs(prompt, {}).pipe(Effect.provide(displayLayer)),
     );
     return Effect.runPromise(
       preprocessPrompt(marked, sandbox, cwd).pipe(Effect.provide(displayLayer)),
@@ -63,7 +61,7 @@ describe("PromptPreprocessor", () => {
     const marked = await Effect.runPromise(
       substitutePromptArgs("Output: !`exit 1`", {}).pipe(
         Effect.provide(displayLayer),
-      ) as Effect.Effect<string, unknown, never>,
+      ),
     );
     const result = await Effect.runPromise(
       preprocessPrompt(marked, sandbox, sandboxDir).pipe(
@@ -72,9 +70,9 @@ describe("PromptPreprocessor", () => {
       ),
     );
     expect(result).toBeInstanceOf(PromptError);
-    expect((result as PromptError)._tag).toBe("PromptError");
-    expect((result as PromptError).message).toContain("exit 1");
-    expect((result as PromptError).message).toContain("exited with code 1");
+    expect(result._tag).toBe("PromptError");
+    expect(result.message).toContain("exit 1");
+    expect(result.message).toContain("exited with code 1");
   });
 
   it("runs commands with the provided cwd", async () => {
@@ -116,11 +114,7 @@ describe("PromptPreprocessor", () => {
       substitutePromptArgs(
         "First: !`echo hello`\nSecond: !`echo world`",
         {},
-      ).pipe(Effect.provide(displayLayer)) as Effect.Effect<
-        string,
-        unknown,
-        never
-      >,
+      ).pipe(Effect.provide(displayLayer)),
     );
     const result = await Effect.runPromise(
       preprocessPrompt(marked, spySandbox, sandboxDir).pipe(
@@ -162,7 +156,7 @@ describe("PromptPreprocessor", () => {
     const substituted = await Effect.runPromise(
       substitutePromptArgs(rawTemplate, { NAME: "world" }).pipe(
         Effect.provide(displayLayer),
-      ) as Effect.Effect<string, unknown, never>,
+      ),
     );
     const result = await Effect.runPromise(
       preprocessPrompt(substituted, sandbox, sandboxDir).pipe(
@@ -178,11 +172,7 @@ describe("PromptPreprocessor", () => {
     const substituted = await Effect.runPromise(
       substitutePromptArgs(rawTemplate, {
         TITLE: "fixes !`rm -rf /` (do not run)",
-      }).pipe(Effect.provide(displayLayer)) as Effect.Effect<
-        string,
-        unknown,
-        never
-      >,
+      }).pipe(Effect.provide(displayLayer)),
     );
     const result = await Effect.runPromise(
       preprocessPrompt(substituted, sandbox, sandboxDir).pipe(
@@ -198,11 +188,7 @@ describe("PromptPreprocessor", () => {
     const substituted = await Effect.runPromise(
       substitutePromptArgs(rawTemplate, {
         DATA: "!\x01`rm -rf /`",
-      }).pipe(Effect.provide(displayLayer)) as Effect.Effect<
-        string,
-        unknown,
-        never
-      >,
+      }).pipe(Effect.provide(displayLayer)),
     );
     const result = await Effect.runPromise(
       preprocessPrompt(substituted, sandbox, sandboxDir).pipe(

@@ -34,9 +34,9 @@ import {
   agentStreamEmitterLayer,
   type AgentStreamEvent,
 } from "./AgentStreamEmitter.js";
+import type { BindMountSandboxHandle } from "./SandboxProvider.js";
 
 const noopAgentStreamEmitterLayer = agentStreamEmitterLayer();
-import type { BindMountSandboxHandle } from "./SandboxProvider.js";
 
 const execAsync = promisify(exec);
 

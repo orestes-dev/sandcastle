@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import {
   claudeHostSessionPath,
   claudeSandboxSessionPath,
-  encodeProjectPath,
   findClaudeSessionOnHost,
   findCodexSessionOnHost,
   locateCodexHostSession,
@@ -348,8 +347,7 @@ const makeClaudeSessionStorage = (
         hostProjectsDir,
       );
       const jsonl = await readFile(hostPath, "utf-8");
-      const rewritten =
-        jsonl === "" ? "" : transferClaudeSession(jsonl, hostCwd, sandboxCwd);
+      const rewritten = transferClaudeSession(jsonl, hostCwd, sandboxCwd);
       const sandboxPath = claudeSandboxSessionPath(
         sandboxCwd,
         sessionId,
@@ -369,8 +367,13 @@ const makeCodexSessionStorage = (
     options?.sessionStorage?.sandboxSessionsDir ??
     posix.join("/home/agent", ".codex", "sessions");
 
+  // Codex sessions live at YYYY/MM/DD/rollout-*-<id>.jsonl — the path is not
+  // derivable from (cwd, id) alone, so we cache the path written by
+  // captureToHost for hostSessionFilePath to surface on the IterationResult.
+  const capturedPaths = new Map<string, string>();
+
   return {
-    hostSessionFilePath: () => undefined,
+    hostSessionFilePath: (_cwd, id) => capturedPaths.get(id),
     existsOnHost: async (_cwd, id) => {
       const found = await findCodexSessionOnHost(id, hostSessionsDir);
       return found.path !== undefined;
@@ -393,6 +396,7 @@ const makeCodexSessionStorage = (
       const target = join(root, located.relativePath);
       await mkdir(dirname(target), { recursive: true });
       await writeFile(target, rewritten);
+      capturedPaths.set(sessionId, target);
     },
     resumeIntoSandbox: async ({ hostCwd, sandboxCwd, sessionId, handle }) => {
       const located = await locateCodexHostSession(sessionId, hostSessionsDir);
