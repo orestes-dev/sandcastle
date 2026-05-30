@@ -1,5 +1,18 @@
 # @ai-hero/sandcastle
 
+## 0.7.0
+
+### Minor Changes
+
+- 22113ca: `sandcastle init` now supports fully non-interactive setup. Every interactive prompt has a paired CLI flag (`--issue-tracker`, `--create-label`, `--build-image`, `--install-template-deps`) on top of the existing `--agent` / `--template` / `--sandbox` / `--model` / `--image-name`. When stdin is not a TTY and a flag is missing for a prompt that would otherwise fire, init fails fast with a message naming the missing flag instead of crashing on the prompt library.
+
+### Patch Changes
+
+- 0b397a1: Strengthen the `simple-loop` and `sequential-reviewer` prompts so an empty pre-expanded `LIST_TASKS_COMMAND` result is treated as ground truth, not as a stale snapshot. The "do not re-query" hint now frames the filtered list as the sole source of truth, and the `# Done` completion criterion explicitly equates an empty list with completion. Prevents the agent from running its own unfiltered `gh issue list` when the filtered list is `[]`.
+- c6880a4: Fix `createSandbox` (and `createWorktree`) reusing a stale worktree when called twice for the same named branch. A reused worktree holds a local copy of the branch that never moves on its own, so a re-run loop (review → push fixes → re-run) was reading stale code even though `origin/<branch>` had moved ahead.
+
+  On the **clean** worktree-reuse path of the **branch** strategy, sandcastle now runs `git fetch origin <branch>` followed by `git merge --ff-only origin/<branch>` so the worktree picks up new upstream commits. The refresh only runs when it is provably safe — clean tree and strictly behind origin. **Dirty**, **diverged** (unpushed commits), or **fetch fails** (offline) → skip the refresh, reuse as-is, log why. Fetch failure is non-fatal and never breaks the run. First creation, the merge-to-head strategy, and the head strategy are untouched. See ADR 0003 for the full rationale.
+
 ## 0.6.6
 
 ### Patch Changes
