@@ -65,37 +65,42 @@ describe("InitService scaffold", () => {
   it.each([
     {
       agent: claudeCodeAgent,
-      expectedKey: "ANTHROPIC_API_KEY=",
+      expectedKey: "CLAUDE_CODE_OAUTH_TOKEN=",
       unexpectedKey: "OPENAI_KEY=",
-      expectIssue191Link: true,
+      expectClaudeSetupTokenHint: true,
     },
     {
       agent: piAgent,
       expectedKey: "ANTHROPIC_API_KEY=",
       unexpectedKey: "OPENAI_KEY=",
-      expectIssue191Link: false,
+      expectClaudeSetupTokenHint: false,
     },
     {
       agent: codexAgent,
       expectedKey: "OPENAI_KEY=",
       unexpectedKey: "ANTHROPIC_API_KEY=",
-      expectIssue191Link: false,
+      expectClaudeSetupTokenHint: false,
     },
     {
       agent: opencodeAgent,
       expectedKey: "OPENCODE_API_KEY=",
       unexpectedKey: "ANTHROPIC_API_KEY=",
-      expectIssue191Link: false,
+      expectClaudeSetupTokenHint: false,
     },
     {
       agent: cursorAgent,
       expectedKey: "CURSOR_API_KEY=",
       unexpectedKey: "ANTHROPIC_API_KEY=",
-      expectIssue191Link: false,
+      expectClaudeSetupTokenHint: false,
     },
   ])(
     "generates .env.example with $agent.name env var",
-    async ({ agent, expectedKey, unexpectedKey, expectIssue191Link }) => {
+    async ({
+      agent,
+      expectedKey,
+      unexpectedKey,
+      expectClaudeSetupTokenHint,
+    }) => {
       const dir = await makeDir();
       await runScaffold(dir, { agent, model: agent.defaultModel });
 
@@ -105,10 +110,11 @@ describe("InitService scaffold", () => {
       );
       expect(envExample).toContain(expectedKey);
       expect(envExample).not.toContain(unexpectedKey);
-      if (expectIssue191Link) {
-        expect(envExample).toContain("issues/191");
+      expect(envExample).not.toContain("issues/191");
+      if (expectClaudeSetupTokenHint) {
+        expect(envExample).toContain("claude setup-token");
       } else {
-        expect(envExample).not.toContain("issues/191");
+        expect(envExample).not.toContain("claude setup-token");
       }
     },
   );
@@ -1023,8 +1029,8 @@ describe("InitService scaffold", () => {
         join(configDir, ".env.example"),
         "utf-8",
       );
-      // Dynamic env: claude-code agent → ANTHROPIC_API_KEY, default issue tracker → GH_TOKEN
-      expect(envExample).toContain("ANTHROPIC_API_KEY=");
+      // Dynamic env: claude-code agent → CLAUDE_CODE_OAUTH_TOKEN, default issue tracker → GH_TOKEN
+      expect(envExample).toContain("CLAUDE_CODE_OAUTH_TOKEN=");
       expect(envExample).toContain("GH_TOKEN=");
     });
   });
@@ -1210,8 +1216,8 @@ describe("InitService scaffold", () => {
         join(configDir, ".env.example"),
         "utf-8",
       );
-      // Dynamic env: claude-code agent → ANTHROPIC_API_KEY, default issue tracker → GH_TOKEN
-      expect(envExample).toContain("ANTHROPIC_API_KEY=");
+      // Dynamic env: claude-code agent → CLAUDE_CODE_OAUTH_TOKEN, default issue tracker → GH_TOKEN
+      expect(envExample).toContain("CLAUDE_CODE_OAUTH_TOKEN=");
       expect(envExample).toContain("GH_TOKEN=");
     });
 
