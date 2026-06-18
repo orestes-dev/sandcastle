@@ -224,6 +224,12 @@ export const createWorktree = async (
       ? options.branchStrategy.baseBranch
       : undefined;
 
+  // Captured for the worktree's run/interactive/createSandbox methods so they
+  // can route the branch correctly into `SandboxLifecycle`: in `merge-to-head`
+  // mode they pass `branch: undefined` (to trigger the merge step) plus
+  // `keepSourceBranch: true` (so the worktree's source branch survives).
+  const isMergeToHead = options.branchStrategy.type === "merge-to-head";
+
   const { hostRepoDir, worktreeInfo } = await Effect.gen(function* () {
     const hostRepoDir = yield* resolveCwd(options.cwd);
     yield* WorktreeManager.pruneStale(hostRepoDir).pipe(
@@ -396,10 +402,14 @@ export const createWorktree = async (
             hostRepoDir,
             sandboxRepoDir: worktreePath,
             hooks,
-            branch: worktreeInfo.branch,
+            // merge-to-head: pass `undefined` so the lifecycle records the
+            // host's current branch and merges the worktree's commits back into
+            // it. branch strategy: pin to the worktree's branch.
+            branch: isMergeToHead ? undefined : worktreeInfo.branch,
             hostWorktreePath: worktreeInfo.path,
             applyToHost,
             timeouts: options.timeouts,
+            keepSourceBranch: isMergeToHead,
           },
           sandbox,
           (ctx) =>
@@ -643,7 +653,10 @@ export const createWorktree = async (
           iterations: maxIterations,
           hooks,
           prompt: resolvedPrompt,
-          branch: worktreeInfo.branch,
+          // merge-to-head: pass `undefined` so the lifecycle records the host's
+          // current branch and routes through the merge step. branch strategy:
+          // pin to the worktree's branch so commits stay there.
+          branch: isMergeToHead ? undefined : worktreeInfo.branch,
           provider,
           completionSignal: opts.completionSignal,
           idleTimeoutSeconds: opts.idleTimeoutSeconds,
@@ -653,6 +666,7 @@ export const createWorktree = async (
           signal: opts.signal,
           skipPromptExpansion: isInlinePrompt,
           timeouts: options.timeouts,
+          keepSourceBranch: isMergeToHead,
         });
 
         const completion = buildCompletionMessage(
@@ -711,6 +725,7 @@ export const createWorktree = async (
       hooks: opts.hooks,
       copyToWorktree: opts.copyToWorktree,
       timeouts: opts.timeouts,
+      keepSourceBranch: isMergeToHead,
       _test: opts._test,
     });
   };

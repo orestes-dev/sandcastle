@@ -197,6 +197,10 @@ interface SandboxHandleContext {
     | undefined;
   readonly applyToHost: () => Effect.Effect<void, any>;
   readonly timeouts?: Timeouts;
+  /** When true, the worktree's source branch survives across run()/interactive()
+   *  calls and each call merges the agent's commits onto the host's current
+   *  branch. Driven by `createWorktree`'s `merge-to-head` strategy. */
+  readonly keepSourceBranch?: boolean;
 }
 
 /**
@@ -218,6 +222,7 @@ const buildSandboxHandle = (
     providerHandle,
     applyToHost,
     timeouts,
+    keepSourceBranch,
   } = ctx;
 
   const sandboxHandle: Sandbox = {
@@ -335,7 +340,10 @@ const buildSandboxHandle = (
               hostRepoDir,
               iterations: maxIterations,
               prompt: resolvedPrompt,
-              branch,
+              // When the worktree was created with `merge-to-head`, route
+              // the lifecycle through its merge step (branch=undefined) and
+              // keep the worktree's source branch alive for subsequent calls.
+              branch: keepSourceBranch ? undefined : branch,
               provider,
               completionSignal: runOptions.completionSignal,
               idleTimeoutSeconds: runOptions.idleTimeoutSeconds,
@@ -344,6 +352,7 @@ const buildSandboxHandle = (
               signal: runOptions.signal,
               skipPromptExpansion: isInlinePrompt,
               timeouts,
+              keepSourceBranch,
             });
 
             const completion = buildCompletionMessage(
@@ -437,10 +446,13 @@ const buildSandboxHandle = (
               {
                 hostRepoDir,
                 sandboxRepoDir,
-                branch,
+                // merge-to-head worktrees: route through the lifecycle's merge
+                // step and keep the worktree's source branch alive afterwards.
+                branch: keepSourceBranch ? undefined : branch,
                 hostWorktreePath: worktreePath,
                 applyToHost,
                 timeouts,
+                keepSourceBranch,
               },
               sandbox,
               (ctx) =>
@@ -528,6 +540,10 @@ export interface CreateSandboxFromWorktreeOptions {
   readonly hooks?: SandboxHooks;
   readonly copyToWorktree?: string[];
   readonly timeouts?: Timeouts;
+  /** Forwarded to the Sandbox handle. When true (createWorktree's
+   *  merge-to-head path), each Sandbox.run()/interactive() merges back to the
+   *  host's current branch and preserves the worktree's source branch. */
+  readonly keepSourceBranch?: boolean;
   readonly _test?: {
     readonly buildSandbox?: (sandboxDir: string) => SandboxService;
   };
@@ -688,6 +704,7 @@ export const createSandboxFromWorktree = async (
       providerHandle,
       applyToHost,
       timeouts: options.timeouts,
+      keepSourceBranch: options.keepSourceBranch,
     },
     async () => {
       if (closed) return { preservedWorktreePath: undefined };
