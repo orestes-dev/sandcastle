@@ -605,6 +605,14 @@ export const createWorktree = async (
             })()
           : ClackDisplay.layer;
 
+      // Pre-narrow the bind-mount handle for the orchestrator's session-capture
+      // path. Gated on the provider tag so we never hand a NoSandbox/Isolated
+      // handle (which lack copyFileIn/copyFileOut) to AgentSessionStorage.
+      const bindMountHandle =
+        sandboxProvider.tag === "bind-mount"
+          ? (handle as BindMountSandboxHandle)
+          : undefined;
+
       // 6. Build a SandboxFactory that reuses the started sandbox
       const reuseFactoryLayer = Layer.succeed(SandboxFactory, {
         withSandbox: (makeEffect) =>
@@ -613,6 +621,7 @@ export const createWorktree = async (
               hostWorktreePath: worktreeInfo.path,
               sandboxRepoPath: sandboxRepoDir,
               applyToHost,
+              bindMountHandle,
             },
             sandbox,
           ).pipe(
