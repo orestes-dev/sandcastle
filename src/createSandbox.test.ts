@@ -331,6 +331,113 @@ describe("createSandbox", () => {
     }
   });
 
+  it("sandbox.run() writes raw stdout to sibling .raw.jsonl when logging.verbose is true", async () => {
+    const hostDir = await mkdtemp(join(tmpdir(), "sandbox-verbose-"));
+    await initRepo(hostDir);
+    await commitFile(hostDir, "init.txt", "init", "initial commit");
+    const logPath = join(hostDir, "verbose.log");
+
+    // Use a mock that emits both a recognised stream-JSON line and a line
+    // parseStreamLine drops (unknown tool) so we can verify ALL stdout
+    // makes it to the raw file.
+    const droppedToolLine = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            name: "TotallyUnknownTool",
+            input: { foo: "bar" },
+          },
+        ],
+      },
+    });
+    const recognisedLine = JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "hello" }] },
+    });
+
+    const sandbox = await createSandbox({
+      branch: "verbose-branch",
+      sandbox: testSandbox,
+      cwd: hostDir,
+      _test: {
+        buildSandbox: (sandboxDir) => {
+          const real = makeLocalSandbox(sandboxDir);
+          return {
+            exec: (command, options) => {
+              if (command.startsWith("claude ") && options?.onLine) {
+                const onLine = options.onLine;
+                return Effect.gen(function* () {
+                  for (const line of [droppedToolLine, recognisedLine]) {
+                    onLine(line);
+                  }
+                  return {
+                    stdout: [droppedToolLine, recognisedLine].join("\n"),
+                    stderr: "",
+                    exitCode: 0,
+                  };
+                });
+              }
+              return real.exec(command, options);
+            },
+            copyIn: real.copyIn,
+            copyFileOut: real.copyFileOut,
+          };
+        },
+      },
+    });
+
+    try {
+      await sandbox.run({
+        agent: testProvider,
+        prompt: "do something",
+        maxIterations: 1,
+        logging: { type: "file", path: logPath, verbose: true },
+      });
+
+      const rawPath = `${logPath}.raw.jsonl`;
+      const raw = await readFile(rawPath, "utf-8");
+      const rawLines = raw.split("\n").filter((l) => l.length > 0);
+      expect(rawLines).toContain(droppedToolLine);
+      expect(rawLines).toContain(recognisedLine);
+    } finally {
+      await sandbox.close();
+      await rm(hostDir, { recursive: true, force: true });
+    }
+  });
+
+  it("sandbox.run() does NOT write .raw.jsonl when verbose is false/unset", async () => {
+    const hostDir = await mkdtemp(join(tmpdir(), "sandbox-verbose-"));
+    await initRepo(hostDir);
+    await commitFile(hostDir, "init.txt", "init", "initial commit");
+    const logPath = join(hostDir, "verbose-off.log");
+
+    const sandbox = await createSandbox({
+      branch: "verbose-off-branch",
+      sandbox: testSandbox,
+      cwd: hostDir,
+      _test: {
+        buildSandbox: (sandboxDir) =>
+          makeMockAgentLayer(sandboxDir, async () => "ok"),
+      },
+    });
+
+    try {
+      await sandbox.run({
+        agent: testProvider,
+        prompt: "do something",
+        maxIterations: 1,
+        logging: { type: "file", path: logPath },
+      });
+
+      expect(existsSync(`${logPath}.raw.jsonl`)).toBe(false);
+    } finally {
+      await sandbox.close();
+      await rm(hostDir, { recursive: true, force: true });
+    }
+  });
+
   it("sandbox.close() removes worktree when clean, returns no preservedWorktreePath", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "sandbox-test-"));
     await initRepo(hostDir);
