@@ -225,10 +225,10 @@ const result = await run({
       // event is { type: "text" | "toolCall" | "raw", iteration, timestamp, ... }
       myLogger.info(event);
     },
-    // Optional: dump every raw stdout line the agent emits to a sibling
-    // `.raw.jsonl` file (here: ".sandcastle/logs/my-run.log.raw.jsonl").
-    // Includes lines the provider's stream parser would otherwise drop.
-    // Intended for debugging stuck or unexpected agent behaviour.
+    // Optional: append every raw stdout line the agent emits to the same
+    // log file, interleaved with the human-readable output. Includes lines
+    // the provider's stream parser would otherwise drop. Intended for
+    // debugging stuck or unexpected agent behaviour.
     verbose: true,
   },
   // logging: { type: "stdout", verbose: true }, // OR terminal mode (verbose: raw lines to stdout)

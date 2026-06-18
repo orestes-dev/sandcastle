@@ -194,11 +194,12 @@ export type LoggingOption =
        */
       readonly onAgentStreamEvent?: (event: AgentStreamEvent) => void;
       /**
-       * When `true`, every raw stdout line the agent emits is written
-       * verbatim to a sibling file at `<path>.raw.jsonl`, in real time.
-       * Includes lines the provider's stream parser would otherwise drop
-       * (e.g. tool-use blocks for unrecognised tools). Intended for
-       * debugging stuck or unexpected agent behavior. Default: `false`.
+       * When `true`, every raw stdout line the agent emits is appended
+       * verbatim to the same log file at `path`, in real time. Includes
+       * lines the provider's stream parser would otherwise drop (e.g.
+       * tool-use blocks for unrecognised tools). Intended for debugging
+       * stuck or unexpected agent behavior — note that the raw JSON is
+       * interleaved with the human-readable log output. Default: `false`.
        */
       readonly verbose?: boolean;
     }
@@ -219,9 +220,9 @@ export type LoggingOption =
  * Build the agent-stream event handler for a resolved logging option.
  *
  * Composes the user-provided `onAgentStreamEvent` callback (file mode only)
- * with the verbose raw-line sink: a sibling `<path>.raw.jsonl` file for
- * file mode, or `process.stdout` for stdout mode. Returns `undefined` when
- * neither verbose mode nor a user callback is set.
+ * with the verbose raw-line sink: the log file at `path` for file mode, or
+ * `process.stdout` for stdout mode. Returns `undefined` when neither
+ * verbose mode nor a user callback is set.
  *
  * Raw lines are written synchronously to honor the `onLine` real-time
  * contract — the debugger needs each line as soon as the agent emits it.
@@ -255,18 +256,18 @@ const buildVerboseRawLineSink = (
   logging: LoggingOption,
 ): ((line: string) => void) => {
   if (logging.type === "file") {
-    const rawPath = `${logging.path}.raw.jsonl`;
+    const logPath = logging.path;
     // Ensure the directory exists; the FileDisplay layer creates it for the
     // primary log file but it hasn't necessarily run by the time the first
     // raw line is flushed.
     try {
-      mkdirSync(path.dirname(rawPath), { recursive: true });
+      mkdirSync(path.dirname(logPath), { recursive: true });
     } catch {
       // Swallow — appendFileSync below will surface any real I/O error.
     }
     return (line) => {
       try {
-        appendFileSync(rawPath, line + "\n");
+        appendFileSync(logPath, line + "\n");
       } catch {
         // Swallow — verbose-mode I/O errors must not kill the run.
       }
