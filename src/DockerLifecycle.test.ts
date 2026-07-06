@@ -290,6 +290,61 @@ describe("startContainer", () => {
     expect(runArgs).not.toContain("--cpus");
   });
 
+  it("passes --memory flag when memory is provided", async () => {
+    mockExecFile.mockImplementation((_cmd, _args, _opts, cb: any) => {
+      cb(null, "", "");
+      return undefined as any;
+    });
+
+    await Effect.runPromise(
+      startContainer("ctr", "img", {}, { memory: "512m" }),
+    );
+
+    const runCall = mockExecFile.mock.calls.find(
+      ([, args]) => Array.isArray(args) && args[0] === "run",
+    );
+    expect(runCall).toBeDefined();
+    const runArgs = runCall![1] as string[];
+    const idx = runArgs.indexOf("--memory");
+    expect(idx).toBeGreaterThan(-1);
+    expect(runArgs[idx + 1]).toBe("512m");
+  });
+
+  it("passes --memory-swap flag when memorySwap is provided", async () => {
+    mockExecFile.mockImplementation((_cmd, _args, _opts, cb: any) => {
+      cb(null, "", "");
+      return undefined as any;
+    });
+
+    await Effect.runPromise(
+      startContainer("ctr", "img", {}, { memory: "512m", memorySwap: "1g" }),
+    );
+
+    const runCall = mockExecFile.mock.calls.find(
+      ([, args]) => Array.isArray(args) && args[0] === "run",
+    );
+    const runArgs = runCall![1] as string[];
+    const idx = runArgs.indexOf("--memory-swap");
+    expect(idx).toBeGreaterThan(-1);
+    expect(runArgs[idx + 1]).toBe("1g");
+  });
+
+  it("does not pass --memory or --memory-swap when omitted", async () => {
+    mockExecFile.mockImplementation((_cmd, _args, _opts, cb: any) => {
+      cb(null, "", "");
+      return undefined as any;
+    });
+
+    await Effect.runPromise(startContainer("ctr", "img", {}));
+
+    const runCall = mockExecFile.mock.calls.find(
+      ([, args]) => Array.isArray(args) && args[0] === "run",
+    );
+    const runArgs = runCall![1] as string[];
+    expect(runArgs).not.toContain("--memory");
+    expect(runArgs).not.toContain("--memory-swap");
+  });
+
   it("uses -v format with formatVolumeMount for volume mounts", async () => {
     mockExecFile.mockImplementation((_cmd, _args, _opts, cb: any) => {
       cb(null, "", "");
