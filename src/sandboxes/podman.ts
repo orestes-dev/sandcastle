@@ -132,6 +132,25 @@ export interface PodmanOptions {
    * When omitted, no `--cpus` flag is added and the container is unconstrained.
    */
   readonly cpus?: number;
+  /**
+   * Limit the memory available to the container, via `--memory`.
+   *
+   * Maps directly to `podman run --memory`. Accepts Podman's human-readable
+   * byte units:
+   *
+   * - `"512m"` → `--memory 512m`
+   * - `"2g"` → `--memory 2g`
+   *
+   * When omitted, no `--memory` flag is added and the container is unconstrained.
+   */
+  readonly memory?: string;
+  /**
+   * Limit total memory + swap for the container, via `--memory-swap`.
+   *
+   * Only meaningful when `memory` is also set. Maps directly to
+   * `podman run --memory-swap`.
+   */
+  readonly memorySwap?: string;
 }
 
 /**
@@ -218,6 +237,12 @@ export const podman = (options?: PodmanOptions): SandboxProvider => {
       ]);
       const cpusArgs =
         options?.cpus !== undefined ? ["--cpus", String(options.cpus)] : [];
+      const memoryArgs =
+        options?.memory !== undefined ? ["--memory", options.memory] : [];
+      const memorySwapArgs =
+        options?.memorySwap !== undefined
+          ? ["--memory-swap", options.memorySwap]
+          : [];
 
       // Start container via podman run
       await new Promise<void>((resolve, reject) => {
@@ -234,6 +259,8 @@ export const podman = (options?: PodmanOptions): SandboxProvider => {
             ...groupArgs,
             ...deviceArgs,
             ...cpusArgs,
+            ...memoryArgs,
+            ...memorySwapArgs,
             "-w",
             worktreePath,
             ...envArgs,

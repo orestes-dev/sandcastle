@@ -121,6 +121,25 @@ export interface DockerOptions {
    * When omitted, no `--cpus` flag is added and the container is unconstrained.
    */
   readonly cpus?: number;
+  /**
+   * Limit the memory available to the container, via `--memory`.
+   *
+   * Maps directly to `docker run --memory`. Accepts Docker's human-readable
+   * byte units:
+   *
+   * - `"512m"` → `--memory 512m`
+   * - `"2g"` → `--memory 2g`
+   *
+   * When omitted, no `--memory` flag is added and the container is unconstrained.
+   */
+  readonly memory?: string;
+  /**
+   * Limit total memory + swap for the container, via `--memory-swap`.
+   *
+   * Only meaningful when `memory` is also set. Maps directly to
+   * `docker run --memory-swap`.
+   */
+  readonly memorySwap?: string;
 }
 
 /**
@@ -193,6 +212,8 @@ export const docker = (options?: DockerOptions): SandboxProvider => {
             groups: options?.groups,
             devices: options?.devices,
             cpus: options?.cpus,
+            memory: options?.memory,
+            memorySwap: options?.memorySwap,
             selinuxLabel,
           },
         ),
