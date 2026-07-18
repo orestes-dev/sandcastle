@@ -81,6 +81,14 @@ export interface CreateSandboxOptions {
   readonly cwd?: string;
   /** Lifecycle hooks grouped by execution location (host or sandbox). */
   readonly hooks?: SandboxHooks;
+  /**
+   * Commands that must resolve on PATH inside the sandbox before each `run()`
+   * produces a commit. Verified after `onSandboxReady` hooks; a missing command
+   * fails with a `ProvisioningError`. Use it to assert the git-hook toolchain
+   * (`git`, `jq`, `bash`, the project's package manager) is provisioned so hooks
+   * run rather than being silently skipped. Empty or omitted skips the check.
+   */
+  readonly provision?: ReadonlyArray<string>;
   /** Paths relative to the host repo root to copy into the worktree at creation time. */
   readonly copyToWorktree?: string[];
   /** Override default timeouts for built-in lifecycle steps. Unset keys keep their defaults. */
@@ -286,6 +294,9 @@ interface SandboxHandleContext {
   readonly providerTag: SandboxProvider["tag"];
   readonly applyToHost: () => Effect.Effect<void, any>;
   readonly timeouts?: Timeouts;
+  /** Commands verified on PATH inside the sandbox before each run() commits.
+   *  Forwarded to the sandbox lifecycle's provisioning preflight. */
+  readonly provision?: ReadonlyArray<string>;
   /** Worktree branch strategy. Set only when the handle is backed by a
    *  `createWorktree(...)` handle; absent for top-level `createSandbox()`,
    *  which is always explicit-branch. When `type === "merge-to-head"`, each
@@ -314,6 +325,7 @@ const buildSandboxHandle = (
     bindMountHandle,
     applyToHost,
     timeouts,
+    provision,
     branchStrategy,
   } = ctx;
   // Routing for the lifecycle: in merge-to-head mode pass `branch: undefined`
@@ -464,6 +476,7 @@ const buildSandboxHandle = (
             const orchestrateResult = yield* orchestrate({
               hostRepoDir,
               iterations: maxIterations,
+              provision,
               prompt: resolvedPrompt,
               branch: mergeToHead ? undefined : branch,
               provider,
@@ -711,6 +724,9 @@ export interface CreateSandboxFromWorktreeOptions {
   readonly hostRepoDir: string;
   readonly sandbox: SandboxProvider;
   readonly hooks?: SandboxHooks;
+  /** Commands that must resolve on PATH inside the sandbox before each `run()`
+   *  produces a commit. Threaded to the sandbox lifecycle's provisioning preflight. */
+  readonly provision?: ReadonlyArray<string>;
   readonly copyToWorktree?: string[];
   readonly timeouts?: Timeouts;
   /** Forwarded to the Sandbox handle. Set by `createWorktree` so the handle
@@ -885,6 +901,7 @@ export const createSandboxFromWorktree = async (
       providerTag: options.sandbox.tag,
       applyToHost,
       timeouts: options.timeouts,
+      provision: options.provision,
       branchStrategy: options.branchStrategy,
     },
     async () => {
@@ -1127,6 +1144,7 @@ export const createSandbox = async (
       providerTag: options.sandbox.tag,
       applyToHost,
       timeouts: options.timeouts,
+      provision: options.provision,
     },
     async () => {
       unregisterShutdown();

@@ -49,6 +49,13 @@ const hooks = {
 // platform-specific binaries and any packages added since the last copy.
 const copyToWorktree = ["node_modules"];
 
+// Verify the git-hook toolchain is present in the sandbox before each agent
+// runs, so commits run the repo's hooks instead of silently skipping them.
+// A missing tool aborts the run with a provisioning error rather than degrading
+// to --no-verify. Add your package manager (e.g. "npm") if a pre-commit hook
+// shells out to it.
+const provision = ["git", "jq", "bash"];
+
 // ---------------------------------------------------------------------------
 // Main loop
 // ---------------------------------------------------------------------------
@@ -67,6 +74,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   // -------------------------------------------------------------------------
   const plan = await sandcastle.run({
     hooks,
+    provision,
     sandbox: docker(),
     name: "planner",
     // One iteration is enough: the planner just needs to read and reason,
@@ -109,6 +117,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     issues.map((issue) =>
       sandcastle.run({
         hooks,
+        provision,
         copyToWorktree,
         // Each agent starts on its own branch via branchStrategy on run().
         sandbox: docker(),
@@ -184,6 +193,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   // -------------------------------------------------------------------------
   await sandcastle.run({
     hooks,
+    provision,
     sandbox: docker(),
     name: "merger",
     maxIterations: 1,

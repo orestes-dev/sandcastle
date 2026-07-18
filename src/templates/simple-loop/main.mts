@@ -38,6 +38,13 @@ await run({
   // platform-specific binaries and any packages added since the last copy.
   copyToWorktree: ["node_modules"],
 
+  // Verify the git-hook toolchain is present in the sandbox before the agent
+  // runs, so commits run the repo's hooks instead of silently skipping them.
+  // A missing tool aborts the run with a provisioning error rather than
+  // degrading to --no-verify. Add your package manager (e.g. "npm") if a
+  // pre-commit hook shells out to it.
+  provision: ["git", "jq", "bash"],
+
   // Lifecycle hooks — commands grouped by where they run (host or sandbox).
   hooks: {
     sandbox: {

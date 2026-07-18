@@ -358,6 +358,15 @@ export interface RunOptions<A extends AgentProvider = AgentProvider> {
   readonly maxIterations?: number;
   /** Lifecycle hooks grouped by execution location (host or sandbox). */
   readonly hooks?: SandboxHooks;
+  /**
+   * Commands that must resolve on PATH inside the sandbox before the agent runs.
+   * Verified after `onSandboxReady` hooks and before any commit is produced; a
+   * missing command aborts the run with a `ProvisioningError`. Use it to assert
+   * the git-hook toolchain (`git`, `jq`, `bash`, and the project's package
+   * manager) is provisioned so hooks run in worker commits rather than being
+   * silently skipped. Empty or omitted skips the check.
+   */
+  readonly provision?: ReadonlyArray<string>;
   /** Key-value map for {{KEY}} placeholder substitution in prompts */
   readonly promptArgs?: PromptArgs;
   /** Logging mode (default: { type: 'file' } with auto-generated path under .sandcastle/logs/) */
@@ -742,6 +751,7 @@ export async function run(
       hostRepoDir,
       iterations: maxIterations,
       hooks,
+      provision: options.provision,
       prompt: resolvedPrompt,
       branch: orchestrateBranch,
       provider,

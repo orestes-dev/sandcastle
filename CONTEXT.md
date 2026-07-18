@@ -154,6 +154,10 @@ _Avoid_: "local hook"
 A lifecycle hook that runs inside the **sandbox** container. Sandbox hooks are `{ command: string; sudo?: boolean }`.
 _Avoid_: "container hook", "remote hook"
 
+**Provisioning preflight**:
+A check that every command in the `provision` list resolves on PATH inside the **sandbox**, run after `onSandboxReady` hooks and before the **agent** produces any commit. A missing command fails the run with a `ProvisioningError`. It exists so a worker that can commit has the git-hook toolchain (`git`, `jq`, `bash`, the project's package manager) present: a genuinely missing tool is a loud provisioning failure, never a silently skipped hook or a blanket `--no-verify`. Provision the environment; do not degrade the checks.
+_Avoid_: "dependency check", "doctor" (implies a fixer), "toolchain lint"
+
 ### Init
 
 **Init**:
