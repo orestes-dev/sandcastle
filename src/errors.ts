@@ -66,6 +66,18 @@ export class InitError extends Data.TaggedError("InitError")<{
   readonly message: string;
 }> {}
 
+/**
+ * Worker provisioning is incomplete: a tool the sandbox needs before it can
+ * produce a commit is absent. Raised by the toolchain preflight so a missing
+ * dependency fails loudly as a provisioning error rather than degrading to a
+ * silent hook skip or a blanket `--no-verify`.
+ */
+export class ProvisioningError extends Data.TaggedError("ProvisioningError")<{
+  readonly message: string;
+  /** The required commands that were not found on PATH inside the sandbox. */
+  readonly missing: ReadonlyArray<string>;
+}> {}
+
 /** Run exceeded the configured agent idle timeout */
 export class AgentIdleTimeoutError extends Data.TaggedError(
   "AgentIdleTimeoutError",
@@ -206,6 +218,7 @@ export type SandboxError =
   | AgentError
   | ConfigDirError
   | InitError
+  | ProvisioningError
   | AgentIdleTimeoutError
   | WorktreeTimeoutError
   | ContainerStartTimeoutError

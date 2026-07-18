@@ -251,6 +251,9 @@ export interface OrchestrateOptions {
   readonly hostRepoDir: string;
   readonly iterations: number;
   readonly hooks?: SandboxHooks;
+  /** Commands that must resolve on PATH inside the sandbox before the agent runs.
+   *  Threaded to the sandbox lifecycle's provisioning preflight. */
+  readonly provision?: ReadonlyArray<string>;
   readonly prompt: string;
   readonly branch?: string;
   readonly provider: AgentProvider;
@@ -327,8 +330,15 @@ export const orchestrate = (
     const factory = yield* SandboxFactory;
     const display = yield* Display;
     const streamEmitter = yield* AgentStreamEmitter;
-    const { hostRepoDir, iterations, hooks, prompt, branch, provider } =
-      options;
+    const {
+      hostRepoDir,
+      iterations,
+      hooks,
+      provision,
+      prompt,
+      branch,
+      provider,
+    } = options;
     let completionSignals: string[];
     if (options.completionSignal === undefined) {
       completionSignals = [DEFAULT_COMPLETION_SIGNAL];
@@ -366,6 +376,7 @@ export const orchestrate = (
               hostRepoDir,
               sandboxRepoDir: sandboxRepoPath,
               hooks,
+              provision,
               branch,
               hostWorktreePath,
               applyToHost,

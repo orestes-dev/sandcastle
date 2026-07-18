@@ -8,6 +8,7 @@ import {
   GitSetupTimeoutError,
   HookTimeoutError,
   MergeToHostTimeoutError,
+  ProvisioningError,
   SyncError,
   withTimeout,
   type SandboxError,
@@ -83,6 +84,63 @@ const execOkWithGitTimeout = (
 
 const execAsync = promisify(exec);
 
+/** Per-command timeout for the toolchain preflight `command -v` probes. */
+const PROVISION_CHECK_TIMEOUT_MS = 10_000;
+
+/**
+ * Verify every command in `tools` resolves on PATH inside the sandbox, and fail
+ * with a {@link ProvisioningError} listing all that are absent.
+ *
+ * This is the worker-side of the tiered-hook contract: a context that can
+ * produce a commit must have the toolchain its git hooks need (`git`, `jq`,
+ * `bash`, the project's package manager) installed *before* the commit is
+ * attempted. Runs after `onSandboxReady` (so dependency-install hooks have
+ * already run) and before the agent starts, so a genuinely missing tool is a
+ * loud provisioning failure rather than a silently skipped hook or a blanket
+ * `--no-verify`. All missing tools are collected in a single pass so one report
+ * names every gap.
+ */
+const verifyToolchain = (
+  sandbox: SandboxService,
+  tools: ReadonlyArray<string>,
+  sandboxRepoDir: string,
+): Effect.Effect<void, ProvisioningError | ExecError> =>
+  Effect.gen(function* () {
+    const missing: string[] = [];
+    for (const tool of tools) {
+      const result = yield* sandbox
+        .exec(`command -v ${tool}`, { cwd: sandboxRepoDir })
+        .pipe(
+          withTimeout(
+            PROVISION_CHECK_TIMEOUT_MS,
+            () =>
+              new ExecError({
+                command: `command -v ${tool}`,
+                message: `Toolchain check for '${tool}' timed out after ${PROVISION_CHECK_TIMEOUT_MS}ms`,
+              }),
+          ),
+        );
+      if (result.exitCode !== 0) {
+        missing.push(tool);
+      }
+    }
+    if (missing.length > 0) {
+      const plural = missing.length > 1;
+      return yield* Effect.fail(
+        new ProvisioningError({
+          missing,
+          message:
+            `Worker provisioning is incomplete: the sandbox is missing required ` +
+            `${plural ? "tools" : "tool"} ${missing.join(", ")}. Git hooks cannot run ` +
+            `without ${plural ? "them" : "it"}, so a commit would silently skip enforcement. ` +
+            `Install ${plural ? "them" : "it"} in the sandbox image (.sandcastle/Dockerfile) or ` +
+            `an onSandboxReady hook and rebuild. This is a provisioning failure to fix, ` +
+            `not a check to skip with --no-verify.`,
+        }),
+      );
+    }
+  });
+
 export type SandboxHooks = {
   readonly host?: {
     readonly onWorktreeReady?: ReadonlyArray<{
@@ -144,6 +202,15 @@ export interface SandboxLifecycleOptions {
   readonly hostRepoDir: string;
   readonly sandboxRepoDir: string;
   readonly hooks?: SandboxHooks;
+  /**
+   * Commands that must resolve on PATH inside the sandbox before the agent runs.
+   * Verified after `onSandboxReady` hooks and before any commit is produced; a
+   * missing command fails with a {@link ProvisioningError}. Use it to assert the
+   * git-hook toolchain (`git`, `jq`, `bash`, the project's package manager) is
+   * provisioned so hooks run rather than being skipped. Empty or omitted skips
+   * the check.
+   */
+  readonly provision?: ReadonlyArray<string>;
   readonly branch?: string;
   /** Host-side path to the worktree directory. Required when sandboxRepoDir
    *  is a sandbox path that doesn't exist on the host (e.g. /home/agent/workspace). */
@@ -182,8 +249,14 @@ export const withSandboxLifecycle = <A>(
 ): Effect.Effect<SandboxLifecycleResult<A>, SandboxError, Display> =>
   Effect.gen(function* () {
     const display = yield* Display;
-    const { hostRepoDir, sandboxRepoDir, hooks, branch, hostWorktreePath } =
-      options;
+    const {
+      hostRepoDir,
+      sandboxRepoDir,
+      hooks,
+      provision,
+      branch,
+      hostWorktreePath,
+    } = options;
 
     // Resolve effective timeouts, falling back to the built-in defaults.
     const gitSetupTimeoutMs =
@@ -365,6 +438,15 @@ export const withSandboxLifecycle = <A>(
         ).pipe(Effect.ensuring(Effect.sync(() => abortCleanup?.())));
       }),
     );
+
+    // Provisioning preflight: after dependency-install hooks and before the
+    // agent produces any commit, assert the git-hook toolchain is present so a
+    // missing tool is a loud provisioning failure, not a silently skipped hook.
+    if (provision?.length) {
+      yield* display.taskLog("Verifying toolchain", () =>
+        verifyToolchain(sandbox, provision, sandboxRepoDir),
+      );
+    }
 
     const targetBranch = branch ?? resolvedBranch;
 

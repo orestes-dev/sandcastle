@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { type DisplayEntry, SilentDisplay } from "./Display.js";
 import { type SandboxService } from "./SandboxFactory.js";
 import { makeLocalSandbox } from "./testSandbox.js";
-import { ExecError, SyncError } from "./errors.js";
+import { ExecError, ProvisioningError, SyncError } from "./errors.js";
 import { withSandboxLifecycle, runHostHooks } from "./SandboxLifecycle.js";
 
 /**
@@ -1534,5 +1534,132 @@ describe("runHostHooks", () => {
 
     const content = await readFile(join(dir, "timeout-default.txt"), "utf-8");
     expect(content.trim()).toBe("ok");
+  });
+});
+
+describe("withSandboxLifecycle (provisioning preflight)", () => {
+  const setupWorktree = async () => {
+    const hostDir = await mkdtemp(join(tmpdir(), "host-"));
+    await execAsync("git init -b main", { cwd: hostDir });
+    await execAsync('git config user.email "test@test.com"', { cwd: hostDir });
+    await execAsync('git config user.name "Test"', { cwd: hostDir });
+    await writeFile(join(hostDir, "file.txt"), "original");
+    await execAsync("git add file.txt", { cwd: hostDir });
+    await execAsync('git commit -m "initial commit"', { cwd: hostDir });
+
+    const worktreesDir = join(hostDir, ".sandcastle", "worktrees");
+    await mkdir(worktreesDir, { recursive: true });
+    const worktreeDir = join(worktreesDir, "test-worktree");
+    await execAsync(
+      `git worktree add -b "sandcastle/test" "${worktreeDir}" HEAD`,
+      { cwd: hostDir },
+    );
+
+    const sandbox = makeLocalSandbox(worktreeDir);
+    return { hostDir, worktreeDir, sandbox };
+  };
+
+  it("runs the work when every provisioned tool is present", async () => {
+    const { hostDir, worktreeDir, sandbox } = await setupWorktree();
+    let ran = false;
+
+    await Effect.runPromise(
+      withSandboxLifecycle(
+        {
+          hostRepoDir: hostDir,
+          sandboxRepoDir: worktreeDir,
+          // git and bash are present on the runner, so the preflight passes.
+          provision: ["git", "bash"],
+        },
+        sandbox,
+        () =>
+          Effect.sync(() => {
+            ran = true;
+          }),
+      ).pipe(Effect.provide(testDisplayLayer)),
+    );
+
+    expect(ran).toBe(true);
+  });
+
+  it("fails with a ProvisioningError before the work runs when a tool is missing", async () => {
+    const { hostDir, worktreeDir, sandbox } = await setupWorktree();
+    let ran = false;
+
+    const exit = await Effect.runPromiseExit(
+      withSandboxLifecycle(
+        {
+          hostRepoDir: hostDir,
+          sandboxRepoDir: worktreeDir,
+          provision: ["git", "sandcastle-nonexistent-tool"],
+        },
+        sandbox,
+        () =>
+          Effect.sync(() => {
+            ran = true;
+          }),
+      ).pipe(Effect.provide(testDisplayLayer)),
+    );
+
+    // Work never ran — the preflight aborts before the commit-producing step.
+    expect(ran).toBe(false);
+    expect(exit._tag).toBe("Failure");
+    const error = exit._tag === "Failure" ? (exit.cause as unknown) : undefined;
+    // The failure surfaces as a ProvisioningError naming the missing tool.
+    const message = JSON.stringify(error);
+    expect(message).toContain("ProvisioningError");
+    expect(message).toContain("sandcastle-nonexistent-tool");
+  });
+
+  it("reports every missing tool in a single provisioning failure", async () => {
+    const { hostDir, worktreeDir, sandbox } = await setupWorktree();
+
+    const result = await Effect.runPromise(
+      withSandboxLifecycle(
+        {
+          hostRepoDir: hostDir,
+          sandboxRepoDir: worktreeDir,
+          provision: ["sandcastle-missing-a", "git", "sandcastle-missing-b"],
+        },
+        sandbox,
+        () => Effect.void,
+      ).pipe(Effect.provide(testDisplayLayer), Effect.flip),
+    );
+
+    expect(result).toBeInstanceOf(ProvisioningError);
+    const provisioning = result as ProvisioningError;
+    expect(provisioning.missing).toEqual([
+      "sandcastle-missing-a",
+      "sandcastle-missing-b",
+    ]);
+  });
+
+  it("skips the preflight when provision is empty or omitted", async () => {
+    const { hostDir, worktreeDir, sandbox } = await setupWorktree();
+    let ran = 0;
+
+    await Effect.runPromise(
+      withSandboxLifecycle(
+        { hostRepoDir: hostDir, sandboxRepoDir: worktreeDir, provision: [] },
+        sandbox,
+        () =>
+          Effect.sync(() => {
+            ran += 1;
+          }),
+      ).pipe(Effect.provide(testDisplayLayer)),
+    );
+
+    await Effect.runPromise(
+      withSandboxLifecycle(
+        { hostRepoDir: hostDir, sandboxRepoDir: worktreeDir },
+        sandbox,
+        () =>
+          Effect.sync(() => {
+            ran += 1;
+          }),
+      ).pipe(Effect.provide(testDisplayLayer)),
+    );
+
+    expect(ran).toBe(2);
   });
 });

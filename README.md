@@ -1389,6 +1389,31 @@ hooks: {
 - If any hook exits non-zero, setup fails fast.
 - When a `signal` is passed to `run()`, it is threaded to all hooks — aborting the signal cancels any in-flight hook commands.
 
+### Provisioning
+
+Worker commits run the repo's git hooks. Those hooks need a toolchain — the CLI-only repo-contract hooks depend on `git`, `jq`, and `bash`; project checks (lint, tests) additionally depend on installed dependencies and the package manager. When that toolchain is absent, a commit either skips its hooks silently or fails for environmental reasons, so enforcement is defeated. The fix is to **provision the environment**, not degrade the checks.
+
+Two settings work together:
+
+- Install dependencies before the agent runs, via an `onSandboxReady` hook (`npm install`) and, on bind-mount providers, `copyToWorktree: ["node_modules"]` for fast startup.
+- Assert the toolchain is present with `provision` — a list of commands that must resolve on PATH **inside the sandbox**. It is verified after `onSandboxReady` hooks and before the agent produces any commit. A missing command aborts the run with a `ProvisioningError` that names the gap and points at the sandbox image or hooks — a loud provisioning failure, never a silent skip.
+
+```ts
+await run({
+  agent: claudeCode("claude-opus-4-8"),
+  sandbox: docker(),
+  promptFile: "./.sandcastle/prompt.md",
+  copyToWorktree: ["node_modules"],
+  hooks: { sandbox: { onSandboxReady: [{ command: "npm install" }] } },
+  // Fail loudly if the git-hook toolchain is missing, rather than committing
+  // with hooks skipped or falling back to --no-verify. Add your package
+  // manager (e.g. "npm") if a pre-commit hook shells out to it.
+  provision: ["git", "jq", "bash"],
+});
+```
+
+`provision` is supported on `run()` and `createSandbox()`. It is verified once per `run()`, so a reused `createSandbox()` handle re-checks on every run. An empty or omitted list skips the check. Because the toolchain is provisioned rather than the checks skipped, `--no-verify` is not needed as a worker escape hatch.
+
 ## Development
 
 ```bash
